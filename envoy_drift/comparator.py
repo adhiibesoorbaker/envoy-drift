@@ -1,20 +1,25 @@
-"""Comparator module for detecting drift between two environment configurations."""
+"""Core comparison logic for detecting drift between two env dictionaries."""
+
+from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, Set
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from envoy_drift.filters import DriftFilter
 
 
 @dataclass
 class DriftReport:
-    """Holds the result of comparing two environment configurations."""
+    """Holds the results of comparing a source and target env mapping."""
 
-    missing_in_target: Dict[str, str] = field(default_factory=dict)
-    missing_in_source: Dict[str, str] = field(default_factory=dict)
-    value_differences: Dict[str, tuple] = field(default_factory=dict)
+    missing_in_target: list[str] = field(default_factory=list)
+    missing_in_source: list[str] = field(default_factory=list)
+    value_differences: dict[str, tuple[str, str]] = field(default_factory=dict)
 
     @property
     def has_drift(self) -> bool:
-        """Return True if any drift was detected."""
+        """Return True when any drift was detected."""
         return bool(
             self.missing_in_target
             or self.missing_in_source
@@ -22,61 +27,48 @@ class DriftReport:
         )
 
     def summary(self) -> str:
-        """Return a human-readable summary of the drift report."""
+        """Return a short human-readable summary line."""
         if not self.has_drift:
-            return "No drift detected. Environments are in sync."
-
-        lines = ["Drift detected:\n"]
-
+            return "No drift detected."
+        parts: list[str] = []
         if self.missing_in_target:
-            lines.append("  Keys missing in target:")
-            for key in sorted(self.missing_in_target):
-                lines.append(f"    - {key}={self.missing_in_target[key]}")
-
+            parts.append(f"{len(self.missing_in_target)} key(s) missing in target")
         if self.missing_in_source:
-            lines.append("  Keys missing in source:")
-            for key in sorted(self.missing_in_source):
-                lines.append(f"    + {key}={self.missing_in_source[key]}")
-
+            parts.append(f"{len(self.missing_in_source)} key(s) missing in source")
         if self.value_differences:
-            lines.append("  Value differences:")
-            for key in sorted(self.value_differences):
-                source_val, target_val = self.value_differences[key]
-                lines.append(f"    ~ {key}: '{source_val}' -> '{target_val}'")
-
-        return "\n".join(lines)
+            parts.append(f"{len(self.value_differences)} value difference(s)")
+        return "Drift detected: " + ", ".join(parts) + "."
 
 
 class EnvComparator:
-    """Compares two environment variable dictionaries and produces a DriftReport."""
+    """Compares two env dictionaries and produces a :class:`DriftReport`."""
+
+    def __init__(self, drift_filter: "DriftFilter | None" = None) -> None:
+        self._filter = drift_filter
 
     def compare(
         self,
-        source: Dict[str, str],
-        target: Dict[str, str],
+        source: dict[str, str],
+        target: dict[str, str],
     ) -> DriftReport:
-        """Compare source env against target env and return a DriftReport.
+        """Compare *source* against *target*, respecting any configured filter."""
+        if self._filter is not None:
+            source = self._filter.apply_to_env(source)
+            target = self._filter.apply_to_env(target)
 
-        Args:
-            source: The baseline environment (e.g. staging).
-            target: The environment to compare against (e.g. production).
+        source_keys = set(source)
+        target_keys = set(target)
 
-        Returns:
-            A DriftReport describing all detected differences.
-        """
-        report = DriftReport()
+        missing_in_target = sorted(source_keys - target_keys)
+        missing_in_source = sorted(target_keys - source_keys)
 
-        source_keys: Set[str] = set(source.keys())
-        target_keys: Set[str] = set(target.keys())
-
-        for key in source_keys - target_keys:
-            report.missing_in_target[key] = source[key]
-
-        for key in target_keys - source_keys:
-            report.missing_in_source[key] = target[key]
-
+        value_differences: dict[str, tuple[str, str]] = {}
         for key in source_keys & target_keys:
             if source[key] != target[key]:
-                report.value_differences[key] = (source[key], target[key])
+                value_differences[key] = (source[key], target[key])
 
-        return report
+        return DriftReport(
+            missing_in_target=missing_in_target,
+            missing_in_source=missing_in_source,
+            value_differences=value_differences,
+        )
