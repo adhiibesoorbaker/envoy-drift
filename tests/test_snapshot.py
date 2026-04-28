@@ -92,3 +92,19 @@ def test_list_snapshots_returns_sorted(manager, sample_report):
     snapshots = manager.list_snapshots()
     assert len(snapshots) == 2
     assert snapshots == sorted([p1, p2])
+
+
+def test_load_missing_file_raises(manager):
+    """Loading a path that does not exist should raise FileNotFoundError."""
+    with pytest.raises(FileNotFoundError):
+        manager.load("/tmp/__nonexistent_envoy_test__/no_such_snapshot.json")
+
+
+def test_load_invalid_json_raises(manager, tmp_snapshot_dir, tmp_path):
+    """Loading a file with invalid JSON content should raise a ValueError."""
+    os.makedirs(tmp_snapshot_dir, exist_ok=True)
+    bad_file = str(tmp_path / "snapshots" / "bad.json")
+    with open(bad_file, "w") as fh:
+        fh.write("not valid json {{{")
+    with pytest.raises(ValueError):
+        manager.load(bad_file)
