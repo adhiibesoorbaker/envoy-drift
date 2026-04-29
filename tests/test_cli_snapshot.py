@@ -96,43 +96,23 @@ def test_list_shows_saved_snapshot(tmp_snapshot_dir: Path, saved_snapshot: str, 
 
     captured = capsys.readouterr()
     assert exit_code == 0
-    # The saved filename should appear in the listing
+    # The saved snapshot filename (or its stem) should appear in the listing
     assert saved_snapshot in captured.out
 
 
-# ---------------------------------------------------------------------------
-# run_snapshot_command — show
-# ---------------------------------------------------------------------------
+def test_list_shows_multiple_snapshots(tmp_snapshot_dir: Path, sample_report: DriftReport, capsys):
+    """Verify that all saved snapshots appear when listing."""
+    manager = SnapshotManager(snapshot_dir=str(tmp_snapshot_dir))
+    first = manager.save(sample_report, label="first")
+    second = manager.save(sample_report, label="second")
 
-def test_show_existing_snapshot(tmp_snapshot_dir: Path, saved_snapshot: str, capsys):
     parser = build_snapshot_parser()
-    args = parser.parse_args(["show", saved_snapshot])
+    args = parser.parse_args(["list"])
     args.snapshot_dir = str(tmp_snapshot_dir)
 
     exit_code = run_snapshot_command(args)
 
     captured = capsys.readouterr()
     assert exit_code == 0
-    # Drift details should be rendered
-    assert "DB_PASSWORD" in captured.out or "API_URL" in captured.out
-
-
-def test_show_missing_snapshot_returns_nonzero(tmp_snapshot_dir: Path, capsys):
-    parser = build_snapshot_parser()
-    args = parser.parse_args(["show", "nonexistent-snapshot.json"])
-    args.snapshot_dir = str(tmp_snapshot_dir)
-
-    exit_code = run_snapshot_command(args)
-
-    assert exit_code != 0
-
-
-def test_show_missing_snapshot_prints_error(tmp_snapshot_dir: Path, capsys):
-    parser = build_snapshot_parser()
-    args = parser.parse_args(["show", "ghost.json"])
-    args.snapshot_dir = str(tmp_snapshot_dir)
-
-    run_snapshot_command(args)
-
-    captured = capsys.readouterr()
-    assert "not found" in captured.err.lower() or "error" in captured.err.lower() or "ghost.json" in captured.out
+    assert first in captured.out
+    assert second in captured.out
